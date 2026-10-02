@@ -56,6 +56,21 @@ public endpoint, PostgreSQL has no public endpoint, and the jump host has no pub
 
 ---
 
+## Running
+
+![The storefront served under /store with the product catalogue loaded](docs/storefront.png)
+
+*The storefront at `http://<ingress-ip>/store` — catalogue, images and cart all served
+through the one public IP. Getting a Vite SPA to work under a path prefix took three
+separate fixes; see [Serving an SPA under a sub-path](#serving-an-spa-under-a-sub-path).*
+
+![kubectl output showing seven pods Running and three Ingress objects sharing one external IP](docs/cluster-pods.png)
+
+*Seven pods Running in the `store` namespace and three Ingress objects sharing a single
+external IP — run from the jump host, because the API server has no public endpoint.*
+
+---
+
 ## What's in here
 
 ```
@@ -95,6 +110,11 @@ changed and the rollout would silently do nothing.
 **Infrastructure** is applied by a pipeline in three jobs: `plan` saves each plan as a build
 artifact, `approve` pauses on a manual validation gate, and `apply` applies **those saved
 plans** rather than recomputing them. Nothing is auto-approved.
+
+![An Azure Pipelines run paused on a manual validation step awaiting approval](docs/approval-gate.png)
+
+*The `approve` job holding the run. Applying a saved plan rather than recomputing one is
+the point: what gets approved is exactly what gets applied.*
 
 **Applications** are deployed by Flux. Every change — including every fix made while
 building this — went through git. Nothing was applied with `kubectl`.
@@ -209,6 +229,12 @@ when you are subscription Owner.
 
 **`network_policy = "calico"`** is load-bearing. Without a policy engine, NetworkPolicy
 objects are accepted and **silently ignored**.
+
+![Two curl tests from identical pods: the frontend-labelled pod reaches the backend, the unlabelled one times out](docs/networkpolicy-proof.png)
+
+*Proving the policy is enforced rather than merely present: two otherwise identical pods
+differing only by the `tier=frontend` label. One reaches `order-service`, the other times
+out. Without Calico, both would succeed.*
 
 **`kubenet`, not Azure CNI.** Nothing needs pods individually addressable from the VNet, and
 Azure CNI assigns an IP per pod — a `/24` would be exhausted at two nodes.
