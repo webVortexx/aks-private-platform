@@ -1,0 +1,45 @@
+# Build store-admin from ./src/store-admin and push it to ACR.
+trigger: none
+
+pool:
+  name: store-vnet-agents
+
+variables:
+  acrName: acrstoreexample
+  imageName: store-admin
+  imageTag: $(Build.BuildId)
+  srcDir: $(Build.SourcesDirectory)/store-admin-src
+
+steps:
+- checkout: none
+
+- script: |
+    rm -rf $(srcDir)
+    git clone --depth 1 https://github.com/Azure-Samples/aks-store-demo.git $(srcDir)
+    echo "--- docker context ---"
+    ls -1 $(srcDir)/src/store-admin
+  displayName: 'Clone aks-store-demo source'
+
+- script: |
+    cd $(srcDir)/src/store-admin
+    sed -i "s|^RUN npm run build.*|RUN npm run build-only -- --base=/admin/|" Dockerfile
+    echo "--- verify ---"
+    grep -n "npm run build" Dockerfile
+  displayName: 'Build with base path /admin/'
+
+- task: AzureCLI@2
+  displayName: 'Build and push $(imageName) to ACR'
+  inputs:
+    azureSubscription: 'store-azure-connection'
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -e
+      # ACR admin is disabled; az acr login uses the service connection's AcrPush.
+      az acr login --name $(acrName)
+
+      docker build -t $(acrName).azurecr.io/$(imageName):$(imageTag) $(srcDir)/src/$(imageName)
+      docker push $(acrName).azurecr.io/$(imageName):$(imageTag)
+
+      echo "PUSHED: $(acrName).azurecr.io/$(imageName):$(imageTag)"
+      az acr repository show-tags --name $(acrName) --repository $(imageName) -o table

@@ -1,0 +1,111 @@
+# Terraform for the policy assignments and core infrastructure.
+# Three jobs: plan -> manual approval -> apply. Nothing is auto-approved.
+trigger: none
+
+variables:
+  tfstateRg: rg-store-tfstate
+  tfstateSa: sttfstateexample
+  modules: 'policy network platform postgres jumphost bastion'
+
+jobs:
+
+- job: plan
+  displayName: 'Terraform plan'
+  pool:
+    name: store-vnet-agents
+  steps:
+  - checkout: self
+
+  - task: AzureCLI@2
+    displayName: 'Plan every module'
+    inputs:
+      azureSubscription: 'store-azure-connection'
+      scriptType: bash
+      scriptLocation: inlineScript
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -e
+        export ARM_CLIENT_ID="$servicePrincipalId"
+        export ARM_CLIENT_SECRET="$servicePrincipalKey"
+        export ARM_TENANT_ID="$tenantId"
+        export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+        export ARM_ACCESS_KEY=$(az storage account keys list \
+          -g $(tfstateRg) -n $(tfstateSa) --query '[0].value' -o tsv)
+
+        mkdir -p "$(Build.ArtifactStagingDirectory)"
+
+        for m in $(modules); do
+          echo "==================== $m ===================="
+          (
+            cd "$(Build.SourcesDirectory)/terraform/$m"
+            terraform init -input=false
+            terraform validate
+            terraform plan -input=false -no-color -out=tfplan
+            terraform show -no-color tfplan | grep -E '^Plan:|^No changes' || true
+            cp tfplan "$(Build.ArtifactStagingDirectory)/$m.tfplan"
+          )
+        done
+
+        echo "==================== summary ===================="
+        for m in $(modules); do
+          printf '%-10s ' "$m"
+          ( cd "$(Build.SourcesDirectory)/terraform/$m"
+            terraform show -no-color tfplan | grep -E '^Plan:|^No changes' | head -1 )
+        done
+
+  - publish: $(Build.ArtifactStagingDirectory)
+    artifact: tfplans
+    displayName: 'Publish saved plans'
+
+- job: approve
+  displayName: 'Wait for approval'
+  dependsOn: plan
+  pool: server                 # agentless job - required for ManualValidation
+  timeoutInMinutes: 240
+  steps:
+  - task: ManualValidation@0
+    timeoutInMinutes: 240
+    inputs:
+      notifyUsers: 'you@example.com'
+      instructions: 'Review the plan summary in the Plan job. Approve to apply the saved plans, or reject to abort. Nothing has been changed yet.'
+      onTimeout: 'reject'
+
+- job: apply
+  displayName: 'Terraform apply'
+  dependsOn: approve
+  pool:
+    name: store-vnet-agents
+  steps:
+  - checkout: self
+  - download: current
+    artifact: tfplans
+
+  - task: AzureCLI@2
+    displayName: 'Apply the approved plans'
+    inputs:
+      azureSubscription: 'store-azure-connection'
+      scriptType: bash
+      scriptLocation: inlineScript
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -e
+        export ARM_CLIENT_ID="$servicePrincipalId"
+        export ARM_CLIENT_SECRET="$servicePrincipalKey"
+        export ARM_TENANT_ID="$tenantId"
+        export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+        export ARM_ACCESS_KEY=$(az storage account keys list \
+          -g $(tfstateRg) -n $(tfstateSa) --query '[0].value' -o tsv)
+
+        for m in $(modules); do
+          echo "==================== $m ===================="
+          (
+            cd "$(Build.SourcesDirectory)/terraform/$m"
+            terraform init -input=false
+            # A saved plan needs no -auto-approve; Terraform refuses it if state moved.
+            terraform apply -input=false "$(Pipeline.Workspace)/tfplans/$m.tfplan"
+          )
+        done
+
+        echo "==================== deployed policy assignments ===================="
+        az policy assignment list \
+          --query "[?name!='SecurityCenterBuiltIn'].{name:name, display:displayName}" -o table

@@ -1,0 +1,25 @@
+# Backends (tier=backend) accept traffic only from tier=frontend pods.
+# Requires calico; without a policy engine this is silently ignored.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-frontend-only
+  namespace: store
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: frontend
+    ports:
+    - protocol: TCP
+      port: 3000    # order-service
+    - protocol: TCP
+      port: 3001    # makeline-service
+    - protocol: TCP
+      port: 3002    # product-service

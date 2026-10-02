@@ -1,0 +1,45 @@
+# Deploy the NGINX ingress controller with its Helm chart.
+# Self-hosted agent: the AKS API server is private.
+trigger: none
+
+pool:
+  name: store-vnet-agents
+
+steps:
+- checkout: none
+
+- task: AzureCLI@2
+  displayName: 'Install NGINX ingress controller via Helm'
+  inputs:
+    azureSubscription: 'store-azure-connection'
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -e
+      # HOME is not reliably /root; without these kubectl hits localhost:8080.
+      export HOME=/root
+      export KUBECONFIG=/root/.kube/config
+
+      az aks get-credentials -g rg-store-app -n aks-store --overwrite-existing
+
+      helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      helm repo update
+
+      # The LB probe must hit a path returning 200 on the NodePort. nginx serves
+      # /healthz on 10254, not 80, so / and /healthz 404 and all traffic is dropped.
+      helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx \
+        --create-namespace \
+        --set controller.replicaCount=1 \
+        --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-load-balancer-health-probe-request-path"=/store
+
+      echo "waiting for the load balancer to allocate a public IP..."
+      for i in $(seq 1 30); do
+        IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+             -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+        [ -n "$IP" ] && { echo "INGRESS_PUBLIC_IP=$IP"; break; }
+        sleep 10
+      done
+
+      kubectl get svc -n ingress-nginx
+      kubectl get pods -n ingress-nginx

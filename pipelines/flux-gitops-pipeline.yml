@@ -1,0 +1,53 @@
+# Establish the Flux GitOps loop and sync the application manifests.
+# Needs a SECRET pipeline variable ADO_PAT; secrets are not auto-injected into
+# the environment, hence the env: mapping.
+trigger: none
+
+pool:
+  name: store-vnet-agents
+
+variables:
+  resourceGroup: rg-store-app
+  clusterName: aks-store
+  gitUrl: https://dev.azure.com/YOUR-ADO-ORG/aks-store-demo/_git/aks-store-demo
+  gitBranch: main
+  fluxPath: clusters/aks-store
+
+steps:
+- checkout: none
+
+- task: AzureCLI@2
+  displayName: 'Bootstrap Flux and reconcile the store applications'
+  env:
+    ADO_PAT: $(ADO_PAT)
+  inputs:
+    azureSubscription: 'store-azure-connection'
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -e
+      export HOME=/root
+      export KUBECONFIG=/root/.kube/config
+
+      az aks get-credentials -g $(resourceGroup) -n $(clusterName) --overwrite-existing
+
+      echo "========== bootstrap (idempotent) =========="
+      flux bootstrap git \
+        --url=$(gitUrl) \
+        --branch=$(gitBranch) \
+        --username=git \
+        --password="$ADO_PAT" \
+        --token-auth=true \
+        --path=$(fluxPath)
+
+      echo "========== reconcile application manifests =========="
+      flux reconcile kustomization store-apps --with-source
+
+      echo "========== GitOps state =========="
+      flux get all -A
+
+      echo "========== deployed workloads =========="
+      kubectl get pods,svc,ingress -n store
+
+      echo "========== backend restriction =========="
+      kubectl get networkpolicy -n store

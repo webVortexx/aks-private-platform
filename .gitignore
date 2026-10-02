@@ -1,0 +1,7 @@
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+spn.env
+*.pem
+CREDENTIALS.md

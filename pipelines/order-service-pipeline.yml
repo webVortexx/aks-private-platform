@@ -1,0 +1,38 @@
+# Build order-service from ./src/order-service and push it to ACR.
+trigger: none
+
+pool:
+  name: store-vnet-agents
+
+variables:
+  acrName: acrstoreexample
+  imageName: order-service
+  imageTag: $(Build.BuildId)
+  srcDir: $(Build.SourcesDirectory)/order-service-src
+
+steps:
+- checkout: none
+
+- script: |
+    rm -rf $(srcDir)
+    git clone --depth 1 https://github.com/Azure-Samples/aks-store-demo.git $(srcDir)
+    echo "--- docker context ---"
+    ls -1 $(srcDir)/src/order-service
+  displayName: 'Clone aks-store-demo source'
+
+- task: AzureCLI@2
+  displayName: 'Build and push $(imageName) to ACR'
+  inputs:
+    azureSubscription: 'store-azure-connection'
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -e
+      # ACR admin is disabled; az acr login uses the service connection's AcrPush.
+      az acr login --name $(acrName)
+
+      docker build -t $(acrName).azurecr.io/$(imageName):$(imageTag) $(srcDir)/src/$(imageName)
+      docker push $(acrName).azurecr.io/$(imageName):$(imageTag)
+
+      echo "PUSHED: $(acrName).azurecr.io/$(imageName):$(imageTag)"
+      az acr repository show-tags --name $(acrName) --repository $(imageName) -o table

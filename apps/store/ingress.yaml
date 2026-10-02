@@ -1,0 +1,29 @@
+# Public routing: /store -> store-front, /admin -> store-admin.
+# rewrite-target strips the prefix so each app sees "/" as its root.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: store-ingress
+  namespace: store
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /store(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: store-front
+            port:
+              number: 80
+      - path: /admin(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: store-admin
+            port:
+              number: 80

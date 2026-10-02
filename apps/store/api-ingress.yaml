@@ -1,0 +1,27 @@
+# The frontends proxy /api/* internally, so paths must arrive unchanged - no
+# rewrite-target here. store-admin's nginx handles the superset; store-front
+# owns /api/orders. nginx-ingress picks the longest matching prefix.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: store-api-ingress
+  namespace: store
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /api/orders
+        pathType: Prefix
+        backend:
+          service:
+            name: store-front
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: store-admin
+            port:
+              number: 80

@@ -1,0 +1,49 @@
+# RabbitMQ 4.x required: order-service uses AMQP 1.0 "/queues/" addressing,
+# which 3.13 rejects with unknown_destination.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: store
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:4.3.2-management-alpine
+        ports:
+        - containerPort: 5672
+          name: rabbitmq-amqp
+        - containerPort: 15672
+          name: rabbitmq-http
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          value: "username"
+        - name: RABBITMQ_DEFAULT_PASS
+          value: "password"
+        resources:
+          requests: { cpu: 10m, memory: 128Mi }
+          limits:   { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: store
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: http
+    port: 15672
+    targetPort: 15672

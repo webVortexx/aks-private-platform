@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: store
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        tier: backend
+    spec:
+      initContainers:
+      # Fastify's messagequeue plugin times out if RabbitMQ is not up yet.
+      - name: wait-for-rabbitmq
+        image: busybox:1.37.0
+        command: ["sh", "-c", "until nc -zv rabbitmq 5672; do echo waiting for rabbitmq; sleep 2; done"]
+        resources:
+          requests: { cpu: 1m, memory: 16Mi }
+          limits:   { cpu: 100m, memory: 64Mi }
+      containers:
+      - name: order-service
+        image: acrstoreexample.azurecr.io/order-service:2
+        ports:
+        - containerPort: 3000
+        env:
+        - name: ORDER_QUEUE_HOSTNAME
+          value: "rabbitmq"
+        - name: ORDER_QUEUE_PORT
+          value: "5672"
+        - name: ORDER_QUEUE_USERNAME
+          value: "username"
+        - name: ORDER_QUEUE_PASSWORD
+          value: "password"
+        - name: ORDER_QUEUE_NAME
+          value: "orders"
+        - name: FASTIFY_ADDRESS
+          value: "0.0.0.0"
+        resources:
+          requests: { cpu: 1m, memory: 50Mi }
+          limits:   { cpu: 300m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: store
+spec:
+  selector:
+    app: order-service
+  ports:
+  - port: 3000
+    targetPort: 3000

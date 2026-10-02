@@ -1,0 +1,14 @@
+# Second Kustomization: bootstrap only watches clusters/, so this one points
+# Flux at the application manifests, reusing the same GitRepository source.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: store-apps
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: ./apps/store
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

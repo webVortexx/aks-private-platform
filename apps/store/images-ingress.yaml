@@ -1,0 +1,22 @@
+# product-service returns root-relative image paths; the files live in store-front.
+# [^/]+ excludes anything with a slash, so /store/... keeps matching the longer rule.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: store-images-ingress
+  namespace: store
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /([^/]+\.(?:jpg|jpeg|png|gif|svg|webp|ico))$
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: store-front
+            port:
+              number: 80

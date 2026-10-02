@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: store
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+        tier: backend
+    spec:
+      containers:
+      - name: product-service
+        image: ghcr.io/azure-samples/aks-store-demo/product-service:latest
+        ports:
+        - containerPort: 3002
+        env:
+        - name: AI_SERVICE_URL
+          value: "http://ai-service:5001/"
+        resources:
+          requests: { cpu: 1m, memory: 1Mi }
+          limits:   { cpu: 200m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: store
+spec:
+  selector:
+    app: product-service
+  ports:
+  - port: 3002
+    targetPort: 3002
